@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+
+    steps:
+      - name: Validate release ref
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            echo "This workflow must be run against a tag ref." >&2
+            echo "Current ref type: ${GITHUB_REF_TYPE}" >&2
+            exit 1
+          fi
+
+          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must match v<major>.<minor>.<patch>." >&2
+            echo "Current ref name: ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Build release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}" ./scripts/package-release.sh
+
+      - name: Compute checksums
+        id: checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_SHA="$(shasum -a 256 .dist/Portpal.app.zip | cut -d' ' -f1)"
+          CLI_SHA="$(shasum -a 256 .dist/portpal-cli.tar.gz | cut -d' ' -f1)"
+
+          SOURCE_URL="https://github.com/${GITHUB_REPOSITORY}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
+          curl -L --fail --output source.tar.gz "$SOURCE_URL"
+          SOURCE_SHA="$(shasum -a 256 source.tar.gz | cut -d' ' -f1)"
+
+          {
+            echo "app_sha=$APP_SHA"
+            echo "cli_sha=$CLI_SHA"
+            echo "source_sha=$SOURCE_SHA"
+            echo "source_url=$SOURCE_URL"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            ## Checksums
+            - `Portpal.app.zip`: `${{ steps.checksums.outputs.app_sha }}`
+            - `portpal-cli.tar.gz`: `${{ steps.checksums.outputs.cli_sha }}`
+            - source archive (`${{ steps.checksums.outputs.source_url }}`): `${{ steps.checksums.outputs.source_sha }}`
+          files: |
+            .dist/Portpal.app.zip
+            .dist/portpal-cli.tar.gz
+
+      - name: Write workflow summary
+        shell: bash
+        run: |
+          {
+            echo "## Release Published"
+            echo
+            echo "- Tag: `${GITHUB_REF_NAME}`"
+            echo "- Portpal.app.zip SHA256: `${{ steps.checksums.outputs.app_sha }}`"
+            echo "- portpal-cli.tar.gz SHA256: `${{ steps.checksums.outputs.cli_sha }}`"
+            echo "- Source archive SHA256: `${{ steps.checksums.outputs.source_sha }}`"
+            echo "- Source archive URL: `${{ steps.checksums.outputs.source_url }}`"
+          } >> "$GITHUB_STEP_SUMMARY"
