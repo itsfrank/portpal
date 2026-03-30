@@ -159,16 +159,16 @@ Portpal currently stores its local state in:
 
 ## Homebrew
 
-Portpal is set up for a two-part Homebrew distribution:
+Portpal's Homebrew tap is maintained separately from this source repo:
 
-1. A formula for `portpal` and `PortpalService`
-2. A cask for `Portpal.app`
+1. Tap repo: `https://github.com/itsfrank/homebrew-tap`
+2. Source repo: `https://github.com/itsfrank/portpal`
 
-Repository files:
+This repo only owns the release artifacts that Homebrew consumes:
 
-1. `packaging/homebrew/Formula/portpal.rb`
-2. `packaging/homebrew/Casks/portpal.rb`
-3. `scripts/package-release.sh`
+1. `scripts/package-release.sh`
+2. `.github/workflows/release.yml`
+3. `.github/workflows/release-smoke.yml`
 
 ### Local packaging
 
@@ -192,24 +192,14 @@ That script produces:
 4. `.dist/PortpalService`
 5. `.dist/portpal-cli.tar.gz`
 
-### Local formula install test
-
-The formula is intended for a tap or release workflow. For local development, the simplest test path is still:
-
-```bash
-swift build -c release
-./.build/release/portpal check --host example --local-port 12345
-```
-
 ### Publishing flow
 
-1. Run `./scripts/package-release.sh`
-2. Upload `.dist/Portpal.app.zip` and the source archive to a GitHub release
-3. Use the printed SHA256 values to update the URLs and SHA values in:
-   - `packaging/homebrew/Formula/portpal.rb`
-   - `packaging/homebrew/Casks/portpal.rb`
-4. Publish those files in your Homebrew tap
-5. Install with:
+1. Run `Release Smoke` on `main` to verify GitHub Actions can build the release artifacts
+2. Tag a new version like `v0.1.0`
+3. Run the `Release` workflow against that tag
+4. Use the printed SHA256 values to update the formula and cask in `itsfrank/homebrew-tap`
+5. Publish the tap changes
+6. Install with:
    - `brew install <tap>/portpal`
    - `brew install --cask <tap>/portpal`
 
@@ -229,7 +219,6 @@ Notable current limitations:
 2. There is no delete or edit command yet
 3. There is no reconnect/backoff strategy yet if `ssh` exits
 4. The app assumes your normal SSH configuration, keys, and agent already work with `/usr/bin/ssh`
-5. The checked-in Homebrew formula and cask are release-oriented templates and need real release URLs and SHA256 values before publishing a tap
 
 ## Example Workflow
 
