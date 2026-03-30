@@ -7,7 +7,7 @@ class Portpal < Formula
   head "https://github.com/itsfrank/portpal.git", branch: "main"
 
   depends_on :macos
-  depends_on xcode: ["15.0", :build]
+  depends_on xcode: ["16.1", :build]
 
   def install
     system "swift", "build", "-c", "release", "--product", "portpal", "--product", "PortpalService"
