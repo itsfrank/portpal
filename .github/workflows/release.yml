@@ -75,7 +75,22 @@ jobs:
             echo "source_url=$SOURCE_URL"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Detect existing GitHub release
+        id: release_state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create GitHub release
+        if: steps.release_state.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -89,15 +104,25 @@ jobs:
             .dist/Portpal.app.zip
             .dist/portpal-cli.tar.gz
 
+      - name: Update GitHub release assets
+        if: steps.release_state.outputs.exists == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            .dist/Portpal.app.zip
+            .dist/portpal-cli.tar.gz
+
       - name: Write workflow summary
         shell: bash
         run: |
           {
             echo "## Release Published"
             echo
-            echo "- Tag: `${GITHUB_REF_NAME}`"
-            echo "- Portpal.app.zip SHA256: `${{ steps.checksums.outputs.app_sha }}`"
-            echo "- portpal-cli.tar.gz SHA256: `${{ steps.checksums.outputs.cli_sha }}`"
-            echo "- Source archive SHA256: `${{ steps.checksums.outputs.source_sha }}`"
-            echo "- Source archive URL: `${{ steps.checksums.outputs.source_url }}`"
-          } >> "$GITHUB_STEP_SUMMARY"
+             echo "- Tag: `${GITHUB_REF_NAME}`"
+             echo "- Existing release reused: `${{ steps.release_state.outputs.exists }}`"
+             echo "- Portpal.app.zip SHA256: `${{ steps.checksums.outputs.app_sha }}`"
+             echo "- portpal-cli.tar.gz SHA256: `${{ steps.checksums.outputs.cli_sha }}`"
+             echo "- Source archive SHA256: `${{ steps.checksums.outputs.source_sha }}`"
+             echo "- Source archive URL: `${{ steps.checksums.outputs.source_url }}`"
+           } >> "$GITHUB_STEP_SUMMARY"
