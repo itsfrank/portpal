@@ -69,6 +69,15 @@ public struct PortpalClient {
         return snapshot
     }
 
+    public func removeTunnel(named name: String) throws -> RemoveTunnelResult {
+        let request = PortpalRequest(action: .removeTunnel, name: name)
+        let response = try send(request)
+        guard response.ok, let result = response.removeResult else {
+            throw PortpalClientError.serverError(response.message ?? "Remove request failed.")
+        }
+        return result
+    }
+
     private func send(_ request: PortpalRequest) throws -> PortpalResponse {
         try ServiceLauncher.ensureServiceRunning()
 

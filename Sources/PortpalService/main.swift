@@ -96,6 +96,26 @@ private final class TunnelStore {
         }
     }
 
+    func remove(named name: String) throws -> RemoveTunnelResult {
+        try stateLock.withCriticalSection {
+            let matches = tunnelsByID.values.filter { $0.spec.matchesRemovalName(name) }
+            guard let tunnel = matches.first else {
+                return RemoveTunnelResult(removed: false, name: name, status: nil)
+            }
+            guard matches.count == 1 else {
+                throw TunnelRemovalError.ambiguousName(name)
+            }
+
+            refreshHealth(for: tunnel)
+            let status = tunnel.status
+            stopProcess(for: tunnel)
+            tunnelsByID.removeValue(forKey: tunnel.spec.id)
+            try persistState()
+
+            return RemoveTunnelResult(removed: true, name: name, status: status)
+        }
+    }
+
     private func loadPersistedTunnels() {
         guard let data = try? Data(contentsOf: PortpalEnvironment.stateURL),
               let state = try? decoder.decode(PersistedState.self, from: data) else {
@@ -142,6 +162,21 @@ private final class TunnelStore {
         tunnel.processAlive = ProcessHealth.isAlive(pid: process.processIdentifier)
     }
 
+    private func stopProcess(for tunnel: ManagedTunnel) {
+        if let process = tunnel.process, process.isRunning {
+            process.terminate()
+            process.waitUntilExit()
+        } else if let pid = tunnel.processID, ProcessHealth.isAlive(pid: pid) {
+            kill(pid, SIGTERM)
+        }
+
+        tunnel.process = nil
+        tunnel.processID = nil
+        tunnel.processAlive = false
+        tunnel.portReachable = false
+        tunnel.lastCheckedAt = Date()
+    }
+
     private func startHealthChecks() {
         let timer = DispatchSource.makeTimerSource(queue: timerQueue)
         timer.schedule(deadline: .now() + 2, repeating: 5)
@@ -164,6 +199,17 @@ private final class TunnelStore {
         tunnel.processAlive = ProcessHealth.isAlive(pid: tunnel.processID)
         tunnel.portReachable = tunnel.processAlive && PortHealth.canReachLocalPort(tunnel.spec.localPort)
         tunnel.lastCheckedAt = Date()
+    }
+}
+
+private enum TunnelRemovalError: LocalizedError {
+    case ambiguousName(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .ambiguousName(let name):
+            return "Multiple tunnels match \(name). Use a unique explicit name or exact display name."
+        }
     }
 }
 
@@ -246,6 +292,12 @@ private final class UnixSocketServer {
             return PortpalResponse(ok: true, checkResult: result)
         case .listTunnels:
             return PortpalResponse(ok: true, snapshot: store.snapshot())
+        case .removeTunnel:
+            guard let name = request.name else {
+                return PortpalResponse(ok: false, message: "Missing tunnel name.")
+            }
+            let result = try store.remove(named: name)
+            return PortpalResponse(ok: true, removeResult: result)
         }
     }
 

@@ -33,3 +33,15 @@ import Testing
         try tunnel.validate()
     }
 }
+
+@Test func removalNameMatchesExplicitName() {
+    let tunnel = TunnelSpec(name: "postgres", sshHost: "box", localPort: 5432, remoteHost: "127.0.0.1", remotePort: 5432)
+
+    #expect(tunnel.matchesRemovalName("postgres"))
+}
+
+@Test func removalNameFallsBackToDisplayName() {
+    let tunnel = TunnelSpec(sshHost: "box", localPort: 5432, remoteHost: "127.0.0.1", remotePort: 5432)
+
+    #expect(tunnel.matchesRemovalName("box:5432"))
+}

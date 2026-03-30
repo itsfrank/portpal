@@ -4,6 +4,7 @@ public enum RequestAction: String, Codable, Sendable {
     case createTunnel
     case checkTunnel
     case listTunnels
+    case removeTunnel
 }
 
 public struct TunnelLookup: Codable, Sendable {
@@ -20,11 +21,13 @@ public struct PortpalRequest: Codable, Sendable {
     public let action: RequestAction
     public let tunnel: TunnelSpec?
     public let lookup: TunnelLookup?
+    public let name: String?
 
-    public init(action: RequestAction, tunnel: TunnelSpec? = nil, lookup: TunnelLookup? = nil) {
+    public init(action: RequestAction, tunnel: TunnelSpec? = nil, lookup: TunnelLookup? = nil, name: String? = nil) {
         self.action = action
         self.tunnel = tunnel
         self.lookup = lookup
+        self.name = name
     }
 }
 
@@ -62,18 +65,21 @@ public struct PortpalResponse: Codable, Sendable {
     public let createResult: CreateTunnelResult?
     public let checkResult: CheckTunnelResult?
     public let snapshot: ServiceSnapshot?
+    public let removeResult: RemoveTunnelResult?
 
     public init(
         ok: Bool,
         message: String? = nil,
         createResult: CreateTunnelResult? = nil,
         checkResult: CheckTunnelResult? = nil,
-        snapshot: ServiceSnapshot? = nil
+        snapshot: ServiceSnapshot? = nil,
+        removeResult: RemoveTunnelResult? = nil
     ) {
         self.ok = ok
         self.message = message
         self.createResult = createResult
         self.checkResult = checkResult
         self.snapshot = snapshot
+        self.removeResult = removeResult
     }
 }

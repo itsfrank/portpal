@@ -28,6 +28,17 @@ public struct TunnelSpec: Codable, Hashable, Identifiable, Sendable {
         name ?? "\(sshHost):\(localPort)"
     }
 
+    public func matchesRemovalName(_ candidate: String) -> Bool {
+        let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return false
+        }
+        if let name, name == trimmed {
+            return true
+        }
+        return displayName == trimmed
+    }
+
     public func validate() throws {
         guard !sshHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw TunnelValidationError.emptySSHHost
@@ -134,6 +145,18 @@ public struct ServiceSnapshot: Codable, Sendable {
     public init(tunnels: [TunnelStatus]) {
         self.tunnels = tunnels.sorted { $0.spec.displayName.localizedCaseInsensitiveCompare($1.spec.displayName) == .orderedAscending }
         self.aggregateHealth = AggregateHealth.from(statuses: tunnels)
+    }
+}
+
+public struct RemoveTunnelResult: Codable, Sendable {
+    public let removed: Bool
+    public let name: String
+    public let status: TunnelStatus?
+
+    public init(removed: Bool, name: String, status: TunnelStatus?) {
+        self.removed = removed
+        self.name = name
+        self.status = status
     }
 }
 
