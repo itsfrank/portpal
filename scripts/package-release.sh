@@ -25,6 +25,9 @@ cp "$ROOT_DIR/.build/release/PortpalService" "$DIST_DIR/PortpalService"
 
 chmod +x "$MACOS_DIR/Portpal" "$RESOURCES_DIR/PortpalService" "$DIST_DIR/portpal" "$DIST_DIR/PortpalService"
 
+codesign --force --sign - "$RESOURCES_DIR/PortpalService"
+codesign --force --deep --sign - "$APP_DIR"
+
 rm -f "$DIST_DIR/Portpal.app.zip" "$DIST_DIR/portpal-cli.tar.gz"
 ditto -c -k --sequesterRsrc --keepParent "$APP_DIR" "$DIST_DIR/Portpal.app.zip"
 tar -C "$DIST_DIR" -czf "$DIST_DIR/portpal-cli.tar.gz" portpal PortpalService
