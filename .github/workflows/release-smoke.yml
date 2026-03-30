@@ -1,0 +1,65 @@
+name: Release Smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-release-artifacts:
+    runs-on: macos-15
+
+    steps:
+      - name: Validate smoke ref
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF_TYPE}" != "branch" ]]; then
+            echo "This workflow must be run against a branch ref." >&2
+            echo "Current ref type: ${GITHUB_REF_TYPE}" >&2
+            exit 1
+          fi
+
+          if [[ "${GITHUB_REF_NAME}" != "main" ]]; then
+            echo "This workflow must be run against the main branch." >&2
+            echo "Current ref name: ${GITHUB_REF_NAME}" >&2
+            exit 1
+          fi
+
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Print toolchain versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcode-select -p
+          xcodebuild -version
+          swift --version
+
+      - name: Build release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=0.1.0 ./scripts/package-release.sh
+
+      - name: List built artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la .dist
+
+      - name: Write workflow summary
+        shell: bash
+        run: |
+          {
+            echo "## Release Smoke Succeeded"
+            echo
+            echo "- Ref: `${GITHUB_REF_NAME}`"
+            echo "- Built artifacts from `./scripts/package-release.sh`"
+            echo "- No GitHub release was created"
+          } >> "$GITHUB_STEP_SUMMARY"
