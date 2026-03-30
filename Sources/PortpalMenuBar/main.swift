@@ -245,12 +245,9 @@ final class AppState: ObservableObject {
     private var statusController: StatusItemController?
     private var observationTask: Task<Void, Never>?
 
-    init() {
-        statusController = StatusItemController(model: model)
-    }
-
     func start() {
         NSApp.setActivationPolicy(.accessory)
+        statusController = StatusItemController(model: model)
 
         observationTask = Task {
             for await _ in model.$snapshot.values {
