@@ -27,19 +27,16 @@ impl TestHome {
         &self.root
     }
 
-    fn app_support_dir(&self) -> PathBuf {
-        self.root
-            .join("Library")
-            .join("Application Support")
-            .join("Portpal")
+    fn config_dir(&self) -> PathBuf {
+        self.root.join(".config").join("portpal")
     }
 
     fn config_path(&self) -> PathBuf {
-        self.app_support_dir().join("config.toml")
+        self.config_dir().join("portpal.toml")
     }
 
     fn socket_path(&self) -> PathBuf {
-        self.app_support_dir().join("portpal.sock")
+        self.config_dir().join("portpal.sock")
     }
 }
 
@@ -193,7 +190,7 @@ fn config_commands_use_home_scoped_paths() {
 #[test]
 fn daemon_serves_cli_requests_and_reloads_config() {
     let home = TestHome::new("daemon-requests");
-    fs::create_dir_all(home.app_support_dir()).unwrap();
+    fs::create_dir_all(home.config_dir()).unwrap();
     fs::write(home.config_path(), manual_config("postgres", 15432, 5432)).unwrap();
 
     let mut daemon = spawn_daemon(&home);
@@ -232,7 +229,7 @@ fn daemon_serves_cli_requests_and_reloads_config() {
 #[test]
 fn daemon_returns_json_error_for_invalid_socket_payload() {
     let home = TestHome::new("invalid-request");
-    fs::create_dir_all(home.app_support_dir()).unwrap();
+    fs::create_dir_all(home.config_dir()).unwrap();
     fs::write(home.config_path(), manual_config("postgres", 15432, 5432)).unwrap();
 
     let mut daemon = spawn_daemon(&home);
@@ -258,7 +255,7 @@ fn daemon_returns_json_error_for_invalid_socket_payload() {
 #[test]
 fn auto_started_connection_enters_starting_before_port_is_reachable() {
     let home = TestHome::new("ssh-starting");
-    fs::create_dir_all(home.app_support_dir()).unwrap();
+    fs::create_dir_all(home.config_dir()).unwrap();
     fs::write(home.config_path(), auto_config("postgres", 15432, 5432, 1)).unwrap();
 
     let mut daemon = spawn_daemon_with_env(
@@ -280,7 +277,7 @@ fn auto_started_connection_enters_starting_before_port_is_reachable() {
 #[test]
 fn auto_started_connection_becomes_healthy_when_helper_listens_on_forwarded_port() {
     let home = TestHome::new("ssh-healthy");
-    fs::create_dir_all(home.app_support_dir()).unwrap();
+    fs::create_dir_all(home.config_dir()).unwrap();
     fs::write(home.config_path(), auto_config("postgres", 15433, 5432, 1)).unwrap();
 
     let mut daemon = spawn_daemon_with_env(
@@ -302,7 +299,7 @@ fn auto_started_connection_becomes_healthy_when_helper_listens_on_forwarded_port
 #[test]
 fn auto_started_connection_retries_when_ssh_process_exits() {
     let home = TestHome::new("ssh-exit");
-    fs::create_dir_all(home.app_support_dir()).unwrap();
+    fs::create_dir_all(home.config_dir()).unwrap();
     fs::write(home.config_path(), auto_config("postgres", 15434, 5432, 1)).unwrap();
 
     let mut daemon = spawn_daemon_with_env(
@@ -327,7 +324,7 @@ fn auto_started_connection_retries_when_ssh_process_exits() {
 #[test]
 fn auto_started_connection_retries_when_port_never_becomes_reachable() {
     let home = TestHome::new("ssh-unreachable");
-    fs::create_dir_all(home.app_support_dir()).unwrap();
+    fs::create_dir_all(home.config_dir()).unwrap();
     fs::write(home.config_path(), auto_config("postgres", 15435, 5432, 1)).unwrap();
 
     let mut daemon = spawn_daemon_with_env(
@@ -352,7 +349,7 @@ fn auto_started_connection_retries_when_port_never_becomes_reachable() {
 #[test]
 fn stop_suppresses_restart_until_refresh_restarts_the_connection() {
     let home = TestHome::new("ssh-stop-refresh");
-    fs::create_dir_all(home.app_support_dir()).unwrap();
+    fs::create_dir_all(home.config_dir()).unwrap();
     fs::write(home.config_path(), auto_config("postgres", 15436, 5432, 1)).unwrap();
 
     let mut daemon = spawn_daemon_with_env(

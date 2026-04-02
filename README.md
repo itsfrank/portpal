@@ -30,8 +30,8 @@ The repository now has two runtime pieces:
 
 Persistent config lives at:
 
-1. Socket: `~/Library/Application Support/Portpal/portpal.sock`
-2. Config: `~/Library/Application Support/Portpal/config.toml`
+1. Socket: `~/.config/portpal/portpal.sock`
+2. Config: `~/.config/portpal/portpal.toml`
 
 Initialize a sample config with:
 
@@ -163,4 +163,4 @@ Runtime stop behavior is intentionally not persisted.
 
 1. `portpal stop <name>` kills the connection and suppresses restart for the current daemon session
 2. `portpal refresh <name>` clears suppression and attempts an immediate restart
-3. `portpal reload` re-reads `config.toml` without writing back runtime state
+3. `portpal reload` re-reads `portpal.toml` without writing back runtime state
