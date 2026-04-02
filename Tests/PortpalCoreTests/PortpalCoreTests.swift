@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import PortpalCore
 
 struct PortpalCoreTests {
@@ -63,5 +64,40 @@ struct PortpalCoreTests {
         #expect(status.detailText == "Stopped. box:15432 -> 127.0.0.1:5432")
         #expect(status.displayName == "postgres")
         #expect(status.id == "postgres")
+    }
+
+    @Test func socketURLUsesConfigDirectory() {
+        let expected = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config", isDirectory: true)
+            .appendingPathComponent("portpal", isDirectory: true)
+            .appendingPathComponent("portpal.sock")
+
+        #expect(PortpalEnvironment.socketURL.path == expected.path)
+    }
+
+    @Test func connectionStatusDecodesWithoutExplicitID() throws {
+        let json = """
+        {
+          "name": "postgres",
+          "sshHost": "box",
+          "localPort": 15432,
+          "remoteHost": "127.0.0.1",
+          "remotePort": 5432,
+          "autoStart": true,
+          "reconnectDelaySeconds": 10,
+          "processID": null,
+          "processAlive": false,
+          "portReachable": false,
+          "state": "healthy",
+          "restartSuppressed": false,
+          "lastError": null,
+          "nextRetryInSeconds": null
+        }
+        """
+
+        let status = try JSONDecoder().decode(ConnectionStatus.self, from: Data(json.utf8))
+
+        #expect(status.id == "postgres")
+        #expect(status.name == "postgres")
     }
 }

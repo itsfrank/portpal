@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output};
@@ -95,6 +96,11 @@ fn wait_for_daemon(home: &TestHome) {
 fn stop_daemon(child: &mut Child) {
     let _ = child.kill();
     let _ = child.wait();
+}
+
+fn can_connect_local_port(port: u16) -> bool {
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
+    TcpStream::connect_timeout(&address, Duration::from_millis(200)).is_ok()
 }
 
 fn send_request(home: &TestHome, request: serde_json::Value) -> serde_json::Value {
@@ -385,4 +391,39 @@ fn stop_suppresses_restart_until_refresh_restarts_the_connection() {
     assert_eq!(refreshed["status"]["restartSuppressed"], false);
 
     stop_daemon(&mut daemon);
+}
+
+#[test]
+fn daemon_restart_reaps_stale_matching_tunnel_process() {
+    let home = TestHome::new("ssh-stale-restart");
+    fs::create_dir_all(home.config_dir()).unwrap();
+    fs::write(home.config_path(), auto_config("postgres", 15437, 5432, 1)).unwrap();
+
+    let mut daemon = spawn_daemon_with_env(
+        &home,
+        &[
+            ("PORTPAL_SSH_BIN", test_ssh_bin_path()),
+            ("PORTPAL_TEST_SSH_MODE", "listen"),
+        ],
+    );
+    wait_for_daemon(&home);
+    wait_for_status_state(&home, "postgres", "healthy");
+
+    stop_daemon(&mut daemon);
+    assert!(can_connect_local_port(15437));
+
+    let mut restarted = spawn_daemon_with_env(
+        &home,
+        &[
+            ("PORTPAL_SSH_BIN", test_ssh_bin_path()),
+            ("PORTPAL_TEST_SSH_MODE", "listen"),
+        ],
+    );
+    wait_for_daemon(&home);
+
+    let response = wait_for_status_state(&home, "postgres", "healthy");
+    assert_eq!(response["status"]["processAlive"], true);
+    assert_eq!(response["status"]["portReachable"], true);
+
+    stop_daemon(&mut restarted);
 }

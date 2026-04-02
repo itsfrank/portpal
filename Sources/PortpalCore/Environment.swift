@@ -8,8 +8,16 @@ public enum PortpalEnvironment {
         return directory
     }
 
+    public static var configDirectory: URL {
+        let directory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config", isDirectory: true)
+            .appendingPathComponent("portpal", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
     public static var socketURL: URL {
-        applicationSupportDirectory.appendingPathComponent("portpal.sock")
+        configDirectory.appendingPathComponent("portpal.sock")
     }
 
     public static var stateURL: URL {

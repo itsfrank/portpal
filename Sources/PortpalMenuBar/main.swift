@@ -109,7 +109,7 @@ struct ConnectionRowView: View {
         case .starting:
             return .yellow
         case .waitingToRetry:
-            return .orange
+            return .red
         case .stopped:
             return .gray
         case .failed:
