@@ -16,13 +16,21 @@ Install the CLI from Homebrew:
 
 ```bash
 brew tap itsfrank/tap
-brew install portpal
+brew install itsfrank/tap/portpal
 ```
 
 Start the daemon as a background service:
 
 ```bash
 brew services start portpal
+```
+
+After install, you can use the CLI directly:
+
+```bash
+portpal config init
+portpal list
+portpal status example-postgres
 ```
 
 Useful service commands:
@@ -33,15 +41,17 @@ brew services restart portpal
 brew services stop portpal
 ```
 
+### Menu bar app
+
+<img width="380" height="174" alt="image" src="https://github.com/user-attachments/assets/19e879cb-9d4a-4d2b-bc6f-7daa2ca6ea99" />
+
 If you want the menu bar app too, install `Portpal.app` separately from the same release set used for distribution.
 
-After install, you can use the CLI directly:
-
 ```bash
-portpal config init
-portpal list
-portpal status example-postgres
+brew tap itsfrank/tap
+brew install --cask itsfrank/tap/portpal-app
 ```
+The portpal app is not signed, the first time you launch it you will have to go to `System Settings > Privacy & Security` sroll down to `security` and click `allow` next to the request to launch portpal.app
 
 ## What It Does
 
@@ -63,25 +73,25 @@ Portpal can then:
 Initialize a sample config:
 
 ```bash
-cargo run -- config init
+portpal config init
 ```
 
 Check where Portpal stores its config:
 
 ```bash
-cargo run -- config path
+portpal config path
 ```
 
 Start the daemon:
 
 ```bash
-cargo run -- serve
+portpal serve
 ```
 
 In another terminal, inspect what is running:
 
 ```bash
-cargo run -- list
+portpal list
 ```
 
 ## How Portpal Works Day To Day
@@ -89,9 +99,9 @@ cargo run -- list
 Portpal has two user-facing pieces:
 
 1. `portpal`, the CLI
-2. `PortpalMenuBar`, the macOS menu bar app
+2. `portpal.app`, the macOS menu bar app
 
-The daemon is started with `portpal serve`. After that, other `portpal` commands talk to the running daemon over a local Unix socket.
+The daemon can be started directly with `portpal serve` (if not useing brew services). After that, other `portpal` commands talk to the running daemon over a local Unix socket.
 
 That means the normal flow is:
 
@@ -140,53 +150,52 @@ Rules:
 Start the daemon:
 
 ```bash
-cargo run -- serve
+# manually
+portpal serve
+
+# as a brew service
+brew services start portpal
 ```
 
 List all configured connections:
 
 ```bash
-cargo run -- list
+portpal list
 ```
 
 Inspect one connection:
 
 ```bash
-cargo run -- status example-postgres
+portpal status example-postgres
 ```
 
 Force a reconnect:
 
 ```bash
-cargo run -- refresh example-postgres
+portpal refresh example-postgres
 ```
 
 Stop one connection for the current daemon session:
 
 ```bash
-cargo run -- stop example-postgres
+portpal stop example-postgres
 ```
 
 Reload the config file without restarting the daemon:
 
 ```bash
-cargo run -- reload
+portpal reload
 ```
 
 Validate the config file:
 
 ```bash
-cargo run -- validate-config
+portpal validate-config
 ```
 
 ## Menu Bar App
 
-Build and run the menu bar app:
-
-```bash
-swift build
-open ./.build/debug/PortpalMenuBar
-```
+Start the menubar by launching the `Portpal.app` app installed with `brew install --cask itsfrank/tap/portpal-app`
 
 The menu bar app is useful when you want quick visibility into tunnel state without using the terminal. It supports:
 
