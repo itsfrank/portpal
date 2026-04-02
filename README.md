@@ -1,43 +1,110 @@
 # Portpal
 
-Portpal is a macOS utility for managing forwarded SSH ports.
+Portpal is a macOS utility for managing SSH port forwards you want to keep around.
 
-It ships as:
+It is built for the common case where you regularly tunnel into remote services like Postgres, Redis, or internal HTTP apps and do not want to keep re-running long `ssh -L ...` commands by hand.
 
-1. A Rust `portpal` binary
-2. A Swift menu bar app
+Portpal gives you:
 
-`portpal serve` is the daemon entrypoint. All other `portpal` subcommands act as clients that talk to the daemon over a local Unix socket.
+1. A CLI for defining, starting, stopping, and inspecting forwarded ports
+2. A background daemon that keeps configured tunnels healthy
+3. A menu bar app for quick visibility and control
 
-## Architecture
+## Install
 
-The repository now has two runtime pieces:
+Install the CLI from Homebrew:
 
-1. Rust `portpal`
-   - parses user-edited TOML config
-   - runs the local daemon with `portpal serve`
-   - launches `/usr/bin/ssh`
-   - performs health checks and reconnect scheduling
-   - exposes a local JSON API over a Unix socket
+```bash
+brew tap itsfrank/tap
+brew install portpal
+```
 
-2. Swift `PortpalMenuBar`
-   - displays configured connections and aggregate health
-   - reloads config
-   - refreshes individual connections
-   - stops individual connections for the current daemon session
+Start the daemon as a background service:
 
-## Config
+```bash
+brew services start portpal
+```
 
-Persistent config lives at:
+Useful service commands:
 
-1. Socket: `~/.config/portpal/portpal.sock`
-2. Config: `~/.config/portpal/portpal.toml`
+```bash
+brew services list
+brew services restart portpal
+brew services stop portpal
+```
 
-Initialize a sample config with:
+If you want the menu bar app too, install `Portpal.app` separately from the same release set used for distribution.
+
+After install, you can use the CLI directly:
+
+```bash
+portpal config init
+portpal list
+portpal status example-postgres
+```
+
+## What It Does
+
+Each Portpal connection describes a local port forward, for example:
+
+1. listen on `localhost:15432`
+2. connect through SSH to `prod-db`
+3. forward traffic to `127.0.0.1:5432` on the remote side
+
+Portpal can then:
+
+1. start that tunnel for you
+2. restart it if it dies
+3. show whether it is currently healthy
+4. let you refresh or stop it without rebuilding the config by hand
+
+## Quick Start
+
+Initialize a sample config:
 
 ```bash
 cargo run -- config init
 ```
+
+Check where Portpal stores its config:
+
+```bash
+cargo run -- config path
+```
+
+Start the daemon:
+
+```bash
+cargo run -- serve
+```
+
+In another terminal, inspect what is running:
+
+```bash
+cargo run -- list
+```
+
+## How Portpal Works Day To Day
+
+Portpal has two user-facing pieces:
+
+1. `portpal`, the CLI
+2. `PortpalMenuBar`, the macOS menu bar app
+
+The daemon is started with `portpal serve`. After that, other `portpal` commands talk to the running daemon over a local Unix socket.
+
+That means the normal flow is:
+
+1. define your connections in `portpal.toml`
+2. run the daemon
+3. use the CLI or menu bar app to monitor and control those connections
+
+## Config
+
+Portpal stores its files at:
+
+1. Socket: `~/.config/portpal/portpal.sock`
+2. Config: `~/.config/portpal/portpal.toml`
 
 Example config:
 
@@ -52,35 +119,65 @@ auto_start = true
 reconnect_delay_seconds = 10
 ```
 
+Field meanings:
+
+1. `name`: unique name for the connection
+2. `ssh_host`: SSH host or SSH config alias to connect through
+3. `local_port`: port opened on your machine
+4. `remote_host`: host reached from the SSH server side
+5. `remote_port`: port reached on the remote side
+6. `auto_start`: whether the daemon should try to keep this tunnel running
+7. `reconnect_delay_seconds`: how long to wait before retrying a failed connection
+
 Rules:
 
 1. `name` is required and must be unique
 2. `local_port` must be unique
-3. `auto_start` controls whether the daemon should try to keep the connection running
-4. `reconnect_delay_seconds` controls retry timing when a connection is failed or unhealthy
+3. `auto_start = true` means the daemon will try to keep the tunnel up
 
-## CLI
+## Common CLI Commands
 
-Run the daemon locally:
+Start the daemon:
 
 ```bash
 cargo run -- serve
 ```
 
-Useful commands:
+List all configured connections:
 
 ```bash
 cargo run -- list
-cargo run -- status example-postgres
-cargo run -- refresh example-postgres
-cargo run -- stop example-postgres
-cargo run -- reload
-cargo run -- validate-config
-cargo run -- config path
-cargo run -- config init
 ```
 
-When installed via Homebrew, the intended model is to run the daemon with `brew services` and use `portpal` as the client binary.
+Inspect one connection:
+
+```bash
+cargo run -- status example-postgres
+```
+
+Force a reconnect:
+
+```bash
+cargo run -- refresh example-postgres
+```
+
+Stop one connection for the current daemon session:
+
+```bash
+cargo run -- stop example-postgres
+```
+
+Reload the config file without restarting the daemon:
+
+```bash
+cargo run -- reload
+```
+
+Validate the config file:
+
+```bash
+cargo run -- validate-config
+```
 
 ## Menu Bar App
 
@@ -91,17 +188,36 @@ swift build
 open ./.build/debug/PortpalMenuBar
 ```
 
-The menu bar UI now includes:
+The menu bar app is useful when you want quick visibility into tunnel state without using the terminal. It supports:
 
-1. Per-connection refresh
-2. Per-connection stop
-3. A top-level `Reload Config` button
+1. viewing configured connections and overall health
+2. refreshing a single connection
+3. stopping a single connection for the current daemon session
+4. reloading config from the menu
 
-It no longer includes an add-connection window or a global refresh button.
+## Health And Runtime Behavior
 
-## Build
+Portpal currently considers a connection healthy when:
 
-Build both runtimes from the repository root:
+1. the managed `ssh` process is alive
+2. the local forwarded port accepts a TCP connection
+
+Runtime stop behavior is not persisted:
+
+1. `portpal stop <name>` kills the connection and suppresses restart for the current daemon session
+2. `portpal refresh <name>` clears suppression and attempts an immediate restart
+3. `portpal reload` re-reads `portpal.toml` without writing runtime state back into it
+
+## Homebrew
+
+Homebrew repos:
+
+1. Tap repo: `https://github.com/itsfrank/homebrew-tap`
+2. Source repo: `https://github.com/itsfrank/portpal`
+
+## Building From Source
+
+Build both binaries from the repository root:
 
 ```bash
 cargo build
@@ -138,29 +254,3 @@ That script produces:
 2. `.dist/Portpal.app.zip`
 3. `.dist/portpal`
 4. `.dist/portpal-cli.tar.gz`
-
-## Homebrew
-
-Portpal's Homebrew tap is maintained separately from this source repo:
-
-1. Tap repo: `https://github.com/itsfrank/homebrew-tap`
-2. Source repo: `https://github.com/itsfrank/portpal`
-
-Expected install model:
-
-1. Formula installs `portpal`
-2. `brew services start portpal` runs `portpal serve`
-3. Cask installs `Portpal.app`
-
-## Current Behavior
-
-Health is currently defined as:
-
-1. The managed `ssh` process is alive
-2. The local forwarded port accepts a TCP connection
-
-Runtime stop behavior is intentionally not persisted.
-
-1. `portpal stop <name>` kills the connection and suppresses restart for the current daemon session
-2. `portpal refresh <name>` clears suppression and attempts an immediate restart
-3. `portpal reload` re-reads `portpal.toml` without writing back runtime state

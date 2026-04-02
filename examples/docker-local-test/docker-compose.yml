@@ -1,0 +1,9 @@
+services:
+  sshbox:
+    build:
+      context: .
+    container_name: portpal-local-sshbox
+    ports:
+      - "2222:2222"
+    volumes:
+      - ${HOME}/.ssh/portpal-local-test.pub:/tmp/tester_key.pub:ro
