@@ -40,6 +40,8 @@ jobs:
           xcode-select -p
           xcodebuild -version
           swift --version
+          rustc --version
+          cargo --version
 
       - name: Build release artifacts
         shell: bash

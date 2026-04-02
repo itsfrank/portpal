@@ -5,8 +5,8 @@ import PortpalCore
 
 @MainActor
 final class MenuBarViewModel: ObservableObject {
-    @Published var snapshot = ServiceSnapshot(tunnels: [])
-    @Published var formError: String?
+    @Published var snapshot = ServiceSnapshot(connections: [], aggregateHealth: .empty)
+    @Published var errorMessage: String?
 
     private let client = PortpalClient()
 
@@ -22,82 +22,129 @@ final class MenuBarViewModel: ObservableObject {
 
     func refresh() {
         do {
-            snapshot = try client.listTunnels()
-            formError = nil
+            snapshot = try client.listConnections()
+            errorMessage = nil
         } catch {
-            formError = error.localizedDescription
+            errorMessage = error.localizedDescription
         }
     }
 
-    func createTunnel(name: String, sshHost: String, localPort: String, remoteHost: String, remotePort: String) {
+    func reloadConfig() {
         do {
-            guard let localPort = Int(localPort), let remotePort = Int(remotePort) else {
-                formError = "Ports must be numbers."
-                return
-            }
+            snapshot = try client.reloadConfig()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 
-            let tunnel = TunnelSpec(name: name, sshHost: sshHost, localPort: localPort, remoteHost: remoteHost, remotePort: remotePort)
-            _ = try client.createTunnel(tunnel)
-            formError = nil
+    func refreshConnection(named name: String) {
+        do {
+            _ = try client.refreshConnection(named: name)
+            errorMessage = nil
             refresh()
         } catch {
-            formError = error.localizedDescription
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func stopConnection(named name: String) {
+        do {
+            _ = try client.stopConnection(named: name)
+            errorMessage = nil
+            refresh()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }
 
-struct TunnelRowView: View {
-    let status: TunnelStatus
+struct ConnectionRowView: View {
+    @EnvironmentObject private var model: MenuBarViewModel
+
+    let status: ConnectionStatus
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             Circle()
-                .fill(status.health == .healthy ? Color.green : Color.red)
+                .fill(dotColor)
                 .frame(width: 8, height: 8)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(status.spec.displayName)
+                Text(status.displayName)
                     .font(.body)
                     .foregroundStyle(.primary)
 
-                Text("\(status.spec.remoteHost):\(status.spec.remotePort)")
+                Text(status.detailText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Spacer(minLength: 0)
+
+            Button {
+                model.refreshConnection(named: status.name)
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.plain)
+            .help("Restart connection")
+
+            Button {
+                model.stopConnection(named: status.name)
+            } label: {
+                Image(systemName: "stop.fill")
+            }
+            .buttonStyle(.plain)
+            .help("Stop connection")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
+    }
+
+    private var dotColor: Color {
+        switch status.state {
+        case .healthy:
+            return .green
+        case .starting:
+            return .yellow
+        case .waitingToRetry:
+            return .orange
+        case .stopped:
+            return .gray
+        case .failed:
+            return .red
+        }
     }
 }
 
 struct MenuContentView: View {
     @EnvironmentObject private var model: MenuBarViewModel
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if model.snapshot.tunnels.isEmpty {
-                Text("No managed tunnels")
+            if let errorMessage = model.errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.bottom, 8)
+            }
+
+            if model.snapshot.connections.isEmpty {
+                Text("No configured connections")
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 8)
             } else {
-                ForEach(model.snapshot.tunnels) { status in
-                    TunnelRowView(status: status)
+                ForEach(model.snapshot.connections) { status in
+                    ConnectionRowView(status: status)
                 }
             }
 
             Divider()
                 .padding(.vertical, 8)
 
-            Button("Add Connection…") {
-                openWindow(id: "add-connection")
-            }
-            .buttonStyle(.plain)
-
-            Button("Refresh") {
-                model.refresh()
+            Button("Reload Config") {
+                model.reloadConfig()
             }
             .buttonStyle(.plain)
 
@@ -110,36 +157,7 @@ struct MenuContentView: View {
             .buttonStyle(.plain)
         }
         .padding(12)
-        .frame(width: 280)
-    }
-}
-
-struct AddConnectionView: View {
-    @EnvironmentObject private var model: MenuBarViewModel
-    @State private var name = ""
-    @State private var sshHost = ""
-    @State private var localPort = ""
-    @State private var remoteHost = "127.0.0.1"
-    @State private var remotePort = ""
-
-    var body: some View {
-        Form {
-            TextField("Name", text: $name)
-            TextField("SSH Host", text: $sshHost)
-            TextField("Local Port", text: $localPort)
-            TextField("Remote Host", text: $remoteHost)
-            TextField("Remote Port", text: $remotePort)
-            if let error = model.formError {
-                Text(error)
-                    .foregroundStyle(.red)
-            }
-            Button("Add Connection") {
-                model.createTunnel(name: name, sshHost: sshHost, localPort: localPort, remoteHost: remoteHost, remotePort: remotePort)
-            }
-            .keyboardShortcut(.defaultAction)
-        }
-        .padding()
-        .frame(width: 320)
+        .frame(width: 360)
     }
 }
 
@@ -271,12 +289,6 @@ struct PortpalMenuBarApp: App {
     @StateObject private var state = AppState.shared
 
     var body: some Scene {
-        WindowGroup("Add Connection", id: "add-connection") {
-            AddConnectionView()
-                .environmentObject(state.model)
-        }
-        .defaultSize(width: 320, height: 260)
-
         Settings {
             EmptyView()
         }

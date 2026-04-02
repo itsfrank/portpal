@@ -10,20 +10,10 @@ let package = Package(
     ],
     products: [
         .library(name: "PortpalCore", targets: ["PortpalCore"]),
-        .executable(name: "PortpalService", targets: ["PortpalService"]),
-        .executable(name: "portpal", targets: ["portpal"]),
         .executable(name: "PortpalMenuBar", targets: ["PortpalMenuBar"]),
     ],
     targets: [
         .target(name: "PortpalCore"),
-        .executableTarget(
-            name: "PortpalService",
-            dependencies: ["PortpalCore"]
-        ),
-        .executableTarget(
-            name: "portpal",
-            dependencies: ["PortpalCore"]
-        ),
         .executableTarget(
             name: "PortpalMenuBar",
             dependencies: ["PortpalCore"]

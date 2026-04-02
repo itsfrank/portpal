@@ -2,8 +2,6 @@ import Darwin
 import Foundation
 
 public enum PortpalClientError: LocalizedError {
-    case serviceNotFound(String)
-    case serviceDidNotStart
     case socketCreateFailed
     case socketConnectFailed(String)
     case socketWriteFailed
@@ -13,20 +11,16 @@ public enum PortpalClientError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .serviceNotFound(let path):
-            return "Portpal service executable not found at \(path)."
-        case .serviceDidNotStart:
-            return "Portpal service did not start in time."
         case .socketCreateFailed:
             return "Unable to create local socket."
         case .socketConnectFailed(let path):
-            return "Unable to connect to Portpal service at \(path)."
+            return "Unable to connect to Portpal daemon at \(path). Start it with brew services or run `portpal serve`."
         case .socketWriteFailed:
-            return "Unable to write request to Portpal service."
+            return "Unable to write request to Portpal daemon."
         case .socketReadFailed:
-            return "Unable to read response from Portpal service."
+            return "Unable to read response from Portpal daemon."
         case .invalidResponse:
-            return "Portpal service returned an invalid response."
+            return "Portpal daemon returned an invalid response."
         case .serverError(let message):
             return message
         }
@@ -38,30 +32,10 @@ public struct PortpalClient {
     private let decoder = JSONDecoder()
 
     public init() {
-        encoder.dateEncodingStrategy = .iso8601
-        decoder.dateDecodingStrategy = .iso8601
     }
 
-    public func createTunnel(_ tunnel: TunnelSpec) throws -> CreateTunnelResult {
-        let request = PortpalRequest(action: .createTunnel, tunnel: tunnel)
-        let response = try send(request)
-        guard response.ok, let result = response.createResult else {
-            throw PortpalClientError.serverError(response.message ?? "Create request failed.")
-        }
-        return result
-    }
-
-    public func checkTunnel(sshHost: String, localPort: Int) throws -> CheckTunnelResult {
-        let request = PortpalRequest(action: .checkTunnel, lookup: TunnelLookup(sshHost: sshHost, localPort: localPort))
-        let response = try send(request)
-        guard response.ok, let result = response.checkResult else {
-            throw PortpalClientError.serverError(response.message ?? "Check request failed.")
-        }
-        return result
-    }
-
-    public func listTunnels() throws -> ServiceSnapshot {
-        let request = PortpalRequest(action: .listTunnels)
+    public func listConnections() throws -> ServiceSnapshot {
+        let request = PortpalRequest(action: .list)
         let response = try send(request)
         guard response.ok, let snapshot = response.snapshot else {
             throw PortpalClientError.serverError(response.message ?? "List request failed.")
@@ -69,18 +43,34 @@ public struct PortpalClient {
         return snapshot
     }
 
-    public func removeTunnel(named name: String) throws -> RemoveTunnelResult {
-        let request = PortpalRequest(action: .removeTunnel, name: name)
+    public func refreshConnection(named name: String) throws -> ConnectionStatus {
+        let request = PortpalRequest(action: .refresh, name: name)
         let response = try send(request)
-        guard response.ok, let result = response.removeResult else {
-            throw PortpalClientError.serverError(response.message ?? "Remove request failed.")
+        guard response.ok, let status = response.status else {
+            throw PortpalClientError.serverError(response.message ?? "Refresh request failed.")
         }
-        return result
+        return status
+    }
+
+    public func stopConnection(named name: String) throws -> ConnectionStatus {
+        let request = PortpalRequest(action: .stop, name: name)
+        let response = try send(request)
+        guard response.ok, let status = response.status else {
+            throw PortpalClientError.serverError(response.message ?? "Stop request failed.")
+        }
+        return status
+    }
+
+    public func reloadConfig() throws -> ServiceSnapshot {
+        let request = PortpalRequest(action: .reload)
+        let response = try send(request)
+        guard response.ok, let snapshot = response.snapshot else {
+            throw PortpalClientError.serverError(response.message ?? "Reload request failed.")
+        }
+        return snapshot
     }
 
     private func send(_ request: PortpalRequest) throws -> PortpalResponse {
-        try ServiceLauncher.ensureServiceRunning()
-
         let socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
         guard socketFD >= 0 else {
             throw PortpalClientError.socketCreateFailed

@@ -1,49 +1,46 @@
-import XCTest
+import Testing
 @testable import PortpalCore
 
-final class PortpalCoreTests: XCTestCase {
-    func testAggregateHealthIsEmptyForNoTunnels() {
-        XCTAssertEqual(AggregateHealth.from(statuses: []), .empty)
-    }
-
-    func testAggregateHealthIsMixedForPartialFailures() {
-        let healthy = TunnelStatus(
-            spec: TunnelSpec(sshHost: "box-a", localPort: 9001, remoteHost: "127.0.0.1", remotePort: 22),
-            isManaged: true,
-            processID: 1,
-            processAlive: true,
-            portReachable: true,
-            lastCheckedAt: nil
-        )
-        let unhealthy = TunnelStatus(
-            spec: TunnelSpec(sshHost: "box-b", localPort: 9002, remoteHost: "127.0.0.1", remotePort: 22),
-            isManaged: true,
-            processID: 2,
-            processAlive: true,
+struct PortpalCoreTests {
+    @Test func connectionDetailIncludesRetryDelay() {
+        let status = ConnectionStatus(
+            name: "postgres",
+            sshHost: "box",
+            localPort: 15432,
+            remoteHost: "127.0.0.1",
+            remotePort: 5432,
+            autoStart: true,
+            reconnectDelaySeconds: 10,
+            processID: nil,
+            processAlive: false,
             portReachable: false,
-            lastCheckedAt: nil
+            state: .waitingToRetry,
+            restartSuppressed: false,
+            lastError: nil,
+            nextRetryInSeconds: 9
         )
 
-        XCTAssertEqual(AggregateHealth.from(statuses: [healthy, unhealthy]), .mixed)
+        #expect(status.detailText == "Retrying in 9s. box:15432 -> 127.0.0.1:5432")
     }
 
-    func testTunnelValidationRejectsBadPorts() {
-        let tunnel = TunnelSpec(sshHost: "box", localPort: 0, remoteHost: "127.0.0.1", remotePort: 22)
+    @Test func failedConnectionDetailPrefersErrorMessage() {
+        let status = ConnectionStatus(
+            name: "postgres",
+            sshHost: "box",
+            localPort: 15432,
+            remoteHost: "127.0.0.1",
+            remotePort: 5432,
+            autoStart: true,
+            reconnectDelaySeconds: 10,
+            processID: nil,
+            processAlive: false,
+            portReachable: false,
+            state: .failed,
+            restartSuppressed: false,
+            lastError: "ssh process exited",
+            nextRetryInSeconds: nil
+        )
 
-        XCTAssertThrowsError(try tunnel.validate()) { error in
-            XCTAssertEqual(error as? TunnelValidationError, TunnelValidationError.invalidLocalPort(0))
-        }
-    }
-
-    func testRemovalNameMatchesExplicitName() {
-        let tunnel = TunnelSpec(name: "postgres", sshHost: "box", localPort: 5432, remoteHost: "127.0.0.1", remotePort: 5432)
-
-        XCTAssertTrue(tunnel.matchesRemovalName("postgres"))
-    }
-
-    func testRemovalNameFallsBackToDisplayName() {
-        let tunnel = TunnelSpec(sshHost: "box", localPort: 5432, remoteHost: "127.0.0.1", remotePort: 5432)
-
-        XCTAssertTrue(tunnel.matchesRemovalName("box:5432"))
+        #expect(status.detailText == "Failed: ssh process exited")
     }
 }

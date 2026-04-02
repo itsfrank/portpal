@@ -1,7 +1,7 @@
 import Foundation
 import PortpalCore
 
-private enum CLIError: LocalizedError {
+enum CLIError: LocalizedError {
     case invalidArguments(String)
     case missingRemoveName
 
@@ -15,7 +15,7 @@ private enum CLIError: LocalizedError {
     }
 }
 
-private struct ParsedCreate {
+struct ParsedCreate {
     let name: String?
     let sshHost: String
     let localPort: Int
@@ -47,10 +47,10 @@ private func printJSON<T: Encodable>(_ value: T) throws {
     FileHandle.standardOutput.write(Data("\n".utf8))
 }
 
-private func usage() -> String {
+func usage() -> String {
     """
     Usage:
-      portpal [--json] create --host <sshHost> --local-port <port> --remote-host <host> --remote-port <port> [--name <name>]
+      portpal [--json] create --host <sshHost> (--port <port> | --local-port <port> --remote-port <port>) [--remote-host <host>] [--name <name>]
       portpal [--json] check --host <sshHost> --local-port <port>
       portpal [--json] list
       portpal [--json] rm <name>
@@ -89,7 +89,7 @@ private func parseOptions(arguments: ArraySlice<String>) throws -> CLIOptions {
     return CLIOptions(json: json, command: command, commandArguments: Array(remaining.dropFirst()))
 }
 
-private func parseCreate(arguments: [String]) throws -> ParsedCreate {
+func parseCreate(arguments: [String]) throws -> ParsedCreate {
     var values: [String: String] = [:]
     var iterator = arguments.makeIterator()
     while let argument = iterator.next() {
@@ -99,12 +99,18 @@ private func parseCreate(arguments: [String]) throws -> ParsedCreate {
         values[String(argument.dropFirst(2))] = value
     }
 
-    guard let sshHost = values["host"],
-          let localPortRaw = values["local-port"], let localPort = Int(localPortRaw),
-          let remoteHost = values["remote-host"],
-          let remotePortRaw = values["remote-port"], let remotePort = Int(remotePortRaw) else {
+    guard let sshHost = values["host"] else {
         throw CLIError.invalidArguments(usage())
     }
+
+    let localPortRaw = values["local-port"] ?? values["port"]
+    let remotePortRaw = values["remote-port"] ?? values["port"]
+    guard let localPortRaw, let localPort = Int(localPortRaw),
+          let remotePortRaw, let remotePort = Int(remotePortRaw) else {
+        throw CLIError.invalidArguments(usage())
+    }
+
+    let remoteHost = values["remote-host"] ?? "127.0.0.1"
 
     return ParsedCreate(
         name: values["name"],
