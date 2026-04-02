@@ -116,6 +116,32 @@ mod tests {
     }
 
     #[test]
+    fn aggregate_is_empty_for_no_connections() {
+        let aggregate = aggregate_health(&[]);
+        assert_eq!(aggregate, AggregateHealth::Empty);
+    }
+
+    #[test]
+    fn aggregate_is_all_healthy_when_every_connection_is_healthy() {
+        let aggregate = aggregate_health(&[
+            status(ConnectionState::Healthy),
+            status(ConnectionState::Healthy),
+        ]);
+
+        assert_eq!(aggregate, AggregateHealth::AllHealthy);
+    }
+
+    #[test]
+    fn aggregate_is_none_healthy_when_no_connections_are_healthy() {
+        let aggregate = aggregate_health(&[
+            status(ConnectionState::Starting),
+            status(ConnectionState::Failed),
+        ]);
+
+        assert_eq!(aggregate, AggregateHealth::NoneHealthy);
+    }
+
+    #[test]
     fn aggregate_is_mixed_when_some_are_healthy() {
         let aggregate = aggregate_health(&[
             status(ConnectionState::Healthy),

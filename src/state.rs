@@ -316,9 +316,11 @@ pub fn require_name(name: Option<String>, action: &str) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use crate::ipc::ConnectionState;
+
     use crate::config::{ConfigFile, ConnectionConfig};
 
-    use super::AppState;
+    use super::{require_name, AppState};
 
     fn config(auto_start: bool) -> ConfigFile {
         ConfigFile {
@@ -339,6 +341,7 @@ mod tests {
         let mut state = AppState::new(config(false));
         let status = state.stop_connection("postgres").unwrap();
         assert!(status.restart_suppressed);
+        assert_eq!(status.state, ConnectionState::Stopped);
     }
 
     #[test]
@@ -348,5 +351,52 @@ mod tests {
         state.reload(config(false));
         let status = state.status("postgres").unwrap();
         assert!(status.restart_suppressed);
+        assert_eq!(status.state, ConnectionState::Stopped);
+    }
+
+    #[test]
+    fn status_defaults_to_failed_for_idle_manual_connection() {
+        let mut state = AppState::new(config(false));
+
+        let status = state.status("postgres").unwrap();
+
+        assert_eq!(status.state, ConnectionState::Failed);
+        assert!(!status.restart_suppressed);
+        assert_eq!(status.next_retry_in_seconds, None);
+    }
+
+    #[test]
+    fn stop_unknown_connection_returns_error() {
+        let mut state = AppState::new(config(false));
+
+        let error = state.stop_connection("missing").unwrap_err().to_string();
+
+        assert!(error.contains("unknown connection: missing"));
+    }
+
+    #[test]
+    fn refresh_unknown_connection_returns_error() {
+        let mut state = AppState::new(config(false));
+
+        let error = state.refresh_connection("missing").unwrap_err().to_string();
+
+        assert!(error.contains("unknown connection: missing"));
+    }
+
+    #[test]
+    fn require_name_accepts_non_blank_names() {
+        let name = require_name(Some("postgres".to_string()), "status").unwrap();
+        assert_eq!(name, "postgres");
+    }
+
+    #[test]
+    fn require_name_rejects_missing_or_blank_names() {
+        let missing = require_name(None, "status").unwrap_err().to_string();
+        assert!(missing.contains("status requires a connection name"));
+
+        let blank = require_name(Some("   ".to_string()), "refresh")
+            .unwrap_err()
+            .to_string();
+        assert!(blank.contains("refresh requires a connection name"));
     }
 }

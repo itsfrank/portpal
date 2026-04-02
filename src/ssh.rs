@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use crate::config::ConnectionConfig;
 
 pub fn spawn_connection(connection: &ConnectionConfig) -> Result<Child> {
-    Command::new("/usr/bin/ssh")
+    Command::new(ssh_binary())
         .arg("-N")
         .arg("-o")
         .arg("ExitOnForwardFailure=yes")
@@ -20,4 +20,8 @@ pub fn spawn_connection(connection: &ConnectionConfig) -> Result<Child> {
         .stderr(Stdio::null())
         .spawn()
         .with_context(|| format!("failed to start ssh for {}", connection.name))
+}
+
+fn ssh_binary() -> String {
+    std::env::var("PORTPAL_SSH_BIN").unwrap_or_else(|_| "/usr/bin/ssh".to_string())
 }

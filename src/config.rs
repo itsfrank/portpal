@@ -115,7 +115,10 @@ pub fn validate_config_file(path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConfigFile, ConnectionConfig};
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::{sample_config, validate_config_file, ConfigFile, ConnectionConfig};
 
     fn connection(name: &str, local_port: u16) -> ConnectionConfig {
         ConnectionConfig {
@@ -154,5 +157,69 @@ mod tests {
         let connection = connection("", 15432);
         let error = connection.validate().unwrap_err().to_string();
         assert!(error.contains("connection name is required"));
+    }
+
+    #[test]
+    fn rejects_blank_ssh_host() {
+        let mut connection = connection("db", 15432);
+        connection.ssh_host = "   ".to_string();
+
+        let error = connection.validate().unwrap_err().to_string();
+        assert!(error.contains("ssh_host is required"));
+    }
+
+    #[test]
+    fn rejects_blank_remote_host() {
+        let mut connection = connection("db", 15432);
+        connection.remote_host = "   ".to_string();
+
+        let error = connection.validate().unwrap_err().to_string();
+        assert!(error.contains("remote_host is required"));
+    }
+
+    #[test]
+    fn rejects_zero_ports() {
+        let mut local_port_connection = connection("db", 15432);
+        local_port_connection.local_port = 0;
+        let local_port_error = local_port_connection.validate().unwrap_err().to_string();
+        assert!(local_port_error.contains("local_port must be between 1 and 65535"));
+
+        let mut remote_port_connection = connection("db", 15432);
+        remote_port_connection.remote_port = 0;
+        let remote_port_error = remote_port_connection.validate().unwrap_err().to_string();
+        assert!(remote_port_error.contains("remote_port must be between 1 and 65535"));
+    }
+
+    #[test]
+    fn sample_config_is_valid_toml() {
+        let config: ConfigFile = toml::from_str(&sample_config()).unwrap();
+        assert_eq!(config.connections.len(), 1);
+        assert_eq!(config.connections[0].name, "example-postgres");
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn validate_config_file_requires_existing_path() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("portpal-missing-config-{unique}.toml"));
+
+        let error = validate_config_file(&path).unwrap_err().to_string();
+        assert!(error.contains("config file does not exist"));
+    }
+
+    #[test]
+    fn validate_config_file_accepts_existing_valid_file() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("portpal-valid-config-{unique}.toml"));
+
+        fs::write(&path, sample_config()).unwrap();
+        validate_config_file(&path).unwrap();
+        fs::remove_file(path).unwrap();
     }
 }
