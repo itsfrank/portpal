@@ -13,46 +13,68 @@ use crate::ipc::{PortpalRequest, PortpalResponse, RequestAction};
 use crate::state::{require_name, AppState};
 
 pub fn serve(config_path: PathBuf, socket_path: PathBuf) -> Result<()> {
+    eprintln!("Portpal daemon starting...");
+    eprintln!("Config path: {}", config_path.display());
+    eprintln!("Socket path: {}", socket_path.display());
+
     let initial_config = ConfigFile::load(&config_path)?;
+    eprintln!("Loaded {} connection(s)", initial_config.connections.len());
+
     let state = Arc::new(Mutex::new(AppState::new(initial_config)));
+
+    eprintln!("Starting auto-connections...");
     state
         .lock()
         .map_err(|_| anyhow!("state lock poisoned"))?
         .start_auto_connections();
 
     let health_state = Arc::clone(&state);
-    thread::spawn(move || loop {
-        thread::sleep(Duration::from_secs(1));
-        if let Ok(mut state) = health_state.lock() {
-            state.tick();
+    thread::spawn(move || {
+        eprintln!("Health check thread started");
+        loop {
+            thread::sleep(Duration::from_secs(1));
+            if let Ok(mut state) = health_state.lock() {
+                state.tick();
+            } else {
+                eprintln!("Health check: failed to acquire state lock");
+            }
         }
     });
 
     if socket_path.exists() {
+        eprintln!("Removing existing socket file...");
         fs::remove_file(&socket_path)
             .with_context(|| format!("failed to remove {}", socket_path.display()))?;
     }
 
     let listener = UnixListener::bind(&socket_path)
         .with_context(|| format!("failed to bind {}", socket_path.display()))?;
+    eprintln!("Daemon listening on {}", socket_path.display());
+    eprintln!("Portpal daemon is ready");
 
     for stream in listener.incoming() {
         let mut stream = match stream {
             Ok(stream) => stream,
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!("Failed to accept connection: {}", e);
+                continue;
+            }
         };
 
         let response = match read_request(&mut stream)
             .and_then(|request| handle_request(&state, &config_path, request))
         {
             Ok(response) => response,
-            Err(error) => PortpalResponse {
-                ok: false,
-                message: Some(error.to_string()),
-                snapshot: None,
-                status: None,
-                config_path: None,
-            },
+            Err(error) => {
+                eprintln!("Request error: {}", error);
+                PortpalResponse {
+                    ok: false,
+                    message: Some(error.to_string()),
+                    snapshot: None,
+                    status: None,
+                    config_path: None,
+                }
+            }
         };
 
         let payload = serde_json::to_vec(&response)?;

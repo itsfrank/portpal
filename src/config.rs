@@ -20,6 +20,33 @@ pub struct ConnectionConfig {
     pub remote_port: u16,
     pub auto_start: bool,
     pub reconnect_delay_seconds: u64,
+    pub startup_grace_period_seconds: Option<u64>,
+}
+
+impl ConnectionConfig {
+    pub fn validate(&self) -> Result<()> {
+        if self.name.trim().is_empty() {
+            bail!("connection name is required");
+        }
+        if self.ssh_host.trim().is_empty() {
+            bail!("ssh_host is required for {}", self.name);
+        }
+        if self.remote_host.trim().is_empty() {
+            bail!("remote_host is required for {}", self.name);
+        }
+        if self.local_port == 0 {
+            bail!("local_port must be between 1 and 65535 for {}", self.name);
+        }
+        if self.remote_port == 0 {
+            bail!("remote_port must be between 1 and 65535 for {}", self.name);
+        }
+
+        Ok(())
+    }
+
+    pub fn startup_grace_period_secs(&self) -> u64 {
+        self.startup_grace_period_seconds.unwrap_or(3)
+    }
 }
 
 impl ConfigFile {
@@ -58,28 +85,6 @@ impl ConfigFile {
     }
 }
 
-impl ConnectionConfig {
-    pub fn validate(&self) -> Result<()> {
-        if self.name.trim().is_empty() {
-            bail!("connection name is required");
-        }
-        if self.ssh_host.trim().is_empty() {
-            bail!("ssh_host is required for {}", self.name);
-        }
-        if self.remote_host.trim().is_empty() {
-            bail!("remote_host is required for {}", self.name);
-        }
-        if self.local_port == 0 {
-            bail!("local_port must be between 1 and 65535 for {}", self.name);
-        }
-        if self.remote_port == 0 {
-            bail!("remote_port must be between 1 and 65535 for {}", self.name);
-        }
-
-        Ok(())
-    }
-}
-
 pub fn initialize_config(path: &Path) -> Result<()> {
     if path.exists() {
         bail!("config already exists at {}", path.display());
@@ -100,6 +105,7 @@ pub fn sample_config() -> String {
         "remote_port = 5432",
         "auto_start = true",
         "reconnect_delay_seconds = 10",
+        "# startup_grace_period_seconds = 5  # Optional, defaults to 3",
         "",
     ]
     .join("\n")
@@ -129,6 +135,7 @@ mod tests {
             remote_port: 5432,
             auto_start: true,
             reconnect_delay_seconds: 10,
+            startup_grace_period_seconds: None,
         }
     }
 

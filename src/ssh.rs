@@ -1,3 +1,4 @@
+use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -6,24 +7,86 @@ use anyhow::{bail, Context, Result};
 
 use crate::config::ConnectionConfig;
 
-pub fn spawn_connection(connection: &ConnectionConfig) -> Result<Child> {
+pub fn spawn_connection(connection: &ConnectionConfig, log_prefix: &str) -> Result<Child> {
     terminate_stale_portpal_listener(connection)?;
 
-    Command::new(ssh_binary())
-        .arg("-N")
+    let ssh_bin = ssh_binary();
+    let forward_spec = format!(
+        "{}:{}:{}",
+        connection.local_port, connection.remote_host, connection.remote_port
+    );
+
+    eprintln!(
+        "{} Spawning SSH connection: {} -L {} {}",
+        log_prefix, ssh_bin, forward_spec, connection.ssh_host
+    );
+
+    let mut cmd = Command::new(&ssh_bin);
+    cmd.arg("-N")
         .arg("-o")
         .arg("ExitOnForwardFailure=yes")
+        .arg("-o")
+        .arg("ServerAliveInterval=30")
+        .arg("-o")
+        .arg("ServerAliveCountMax=3")
         .arg("-L")
-        .arg(format!(
-            "{}:{}:{}",
-            connection.local_port, connection.remote_host, connection.remote_port
-        ))
+        .arg(&forward_spec)
         .arg(&connection.ssh_host)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .with_context(|| format!("failed to start ssh for {}", connection.name))
+        .stderr(Stdio::piped());
+
+    let mut child = cmd.spawn().with_context(|| {
+        format!(
+            "{} failed to start ssh process for {}",
+            log_prefix, connection.name
+        )
+    })?;
+
+    let pid = child.id();
+    eprintln!(
+        "{} SSH process started with PID {} for {}",
+        log_prefix, pid, connection.name
+    );
+
+    // Capture stderr in a separate thread to log any immediate errors
+    if let Some(stderr) = child.stderr.take() {
+        let name = connection.name.clone();
+        let prefix = log_prefix.to_string();
+        thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines().flatten() {
+                if !line.trim().is_empty() {
+                    eprintln!("{} SSH stderr [{}]: {}", prefix, name, line);
+                }
+            }
+        });
+    }
+
+    // Give the process a moment to fail immediately (e.g., bad host key, auth failure)
+    thread::sleep(Duration::from_millis(500));
+
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            bail!(
+                "{} SSH process exited immediately with status {} for {}",
+                log_prefix,
+                status,
+                connection.name
+            );
+        }
+        Ok(None) => {
+            eprintln!(
+                "{} SSH process {} still running after startup check",
+                log_prefix, pid
+            );
+        }
+        Err(e) => {
+            eprintln!("{} Failed to check SSH process status: {}", log_prefix, e);
+        }
+    }
+
+    Ok(child)
 }
 
 fn ssh_binary() -> String {

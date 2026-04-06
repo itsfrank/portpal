@@ -9,8 +9,6 @@ use crate::health;
 use crate::ipc::{aggregate_health, ConnectionState, ConnectionStatus, ServiceSnapshot};
 use crate::ssh;
 
-const STARTUP_GRACE_PERIOD: Duration = Duration::from_secs(3);
-
 pub struct AppState {
     connections: BTreeMap<String, ManagedConnection>,
 }
@@ -160,9 +158,17 @@ impl ManagedConnection {
             return;
         }
 
-        match ssh::spawn_connection(&self.config) {
+        let log_prefix = format!("[{}]", self.config.name);
+        eprintln!("{} Attempting to start connection...", log_prefix);
+
+        match ssh::spawn_connection(&self.config, &log_prefix) {
             Ok(child) => {
-                self.process_id = Some(child.id());
+                let pid = child.id();
+                eprintln!(
+                    "{} Connection started successfully (PID: {})",
+                    log_prefix, pid
+                );
+                self.process_id = Some(pid);
                 self.child = Some(child);
                 self.process_alive = true;
                 self.port_reachable = false;
@@ -171,6 +177,7 @@ impl ManagedConnection {
                 self.last_started_at = Some(Instant::now());
             }
             Err(error) => {
+                eprintln!("{} Failed to start connection: {}", log_prefix, error);
                 self.child = None;
                 self.process_id = None;
                 self.process_alive = false;
@@ -184,11 +191,17 @@ impl ManagedConnection {
     }
 
     fn refresh_runtime(&mut self) {
+        let log_prefix = format!("[{}]", self.config.name);
+
         if let Some(child) = self.child.as_mut() {
             match health::is_process_alive(child) {
                 Ok(alive) => {
-                    self.process_alive = alive;
                     if !alive {
+                        eprintln!(
+                            "{} SSH process (PID: {:?}) has exited",
+                            log_prefix, self.process_id
+                        );
+                        self.process_alive = false;
                         self.last_error = Some("ssh process exited".to_string());
                         self.child = None;
                         self.process_id = None;
@@ -198,6 +211,7 @@ impl ManagedConnection {
                     }
                 }
                 Err(error) => {
+                    eprintln!("{} Error checking process health: {}", log_prefix, error);
                     self.process_alive = false;
                     self.last_error = Some(error.to_string());
                     self.child = None;
@@ -208,32 +222,74 @@ impl ManagedConnection {
                 }
             }
 
+            let was_reachable = self.port_reachable;
             self.port_reachable = health::can_reach_local_port(self.config.local_port);
+
+            if !was_reachable && self.port_reachable {
+                eprintln!(
+                    "{} Port {} is now reachable",
+                    log_prefix, self.config.local_port
+                );
+            } else if was_reachable && !self.port_reachable {
+                eprintln!(
+                    "{} Port {} is no longer reachable",
+                    log_prefix, self.config.local_port
+                );
+            }
 
             if !self.port_reachable
                 && self
                     .last_started_at
-                    .map(|started| started.elapsed() >= STARTUP_GRACE_PERIOD)
+                    .map(|started| {
+                        started.elapsed()
+                            >= Duration::from_secs(self.config.startup_grace_period_secs())
+                    })
                     .unwrap_or(true)
             {
-                self.last_error = Some("forwarded port is not reachable".to_string());
+                eprintln!(
+                    "{} Port {} not reachable after {}s grace period - terminating SSH process",
+                    log_prefix,
+                    self.config.local_port,
+                    self.config.startup_grace_period_secs()
+                );
+                self.last_error = Some(format!(
+                    "forwarded port {} is not reachable after {}s startup grace period",
+                    self.config.local_port,
+                    self.config.startup_grace_period_secs()
+                ));
                 self.stop();
                 self.schedule_retry();
             }
         } else {
+            if self.process_alive {
+                eprintln!(
+                    "{} Process no longer tracked but was marked alive",
+                    log_prefix
+                );
+            }
             self.process_alive = false;
             self.port_reachable = false;
         }
     }
 
     fn schedule_retry(&mut self) {
+        let log_prefix = format!("[{}]", self.config.name);
+
         if self.restart_suppressed || !self.config.auto_start {
+            eprintln!(
+                "{} Retry suppressed (restart_suppressed={}, auto_start={})",
+                log_prefix, self.restart_suppressed, self.config.auto_start
+            );
             self.next_retry_at = None;
             return;
         }
 
-        self.next_retry_at =
-            Some(Instant::now() + Duration::from_secs(self.config.reconnect_delay_seconds));
+        let retry_at = Instant::now() + Duration::from_secs(self.config.reconnect_delay_seconds);
+        eprintln!(
+            "{} Scheduling retry in {} seconds (at {:?})",
+            log_prefix, self.config.reconnect_delay_seconds, retry_at
+        );
+        self.next_retry_at = Some(retry_at);
     }
 
     fn tick(&mut self) {
@@ -256,9 +312,19 @@ impl ManagedConnection {
     }
 
     fn stop(&mut self) {
+        let log_prefix = format!("[{}]", self.config.name);
+
         if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+            let pid = self.process_id;
+            eprintln!("{} Stopping SSH process (PID: {:?})", log_prefix, pid);
+            if let Err(e) = child.kill() {
+                eprintln!("{} Failed to kill SSH process: {}", log_prefix, e);
+            }
+            if let Err(e) = child.wait() {
+                eprintln!("{} Failed to wait for SSH process: {}", log_prefix, e);
+            } else {
+                eprintln!("{} SSH process (PID: {:?}) stopped", log_prefix, pid);
+            }
         }
 
         self.process_id = None;
@@ -332,6 +398,7 @@ mod tests {
                 remote_port: 5432,
                 auto_start,
                 reconnect_delay_seconds: 10,
+                startup_grace_period_seconds: None,
             }],
         }
     }
